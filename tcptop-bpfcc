@@ -96,8 +96,10 @@ struct ipv6_key_t {
     u16 lport;
     u16 dport;
 };
-BPF_HASH(ipv6_send_bytes, struct ipv6_key_t);
-BPF_HASH(ipv6_recv_bytes, struct ipv6_key_t);
+BPF_HASH(ipv6_tcp_send_bytes, struct ipv6_key_t);
+BPF_HASH(ipv6_udp_send_bytes, struct ipv6_key_t);
+BPF_HASH(ipv6_tcp_recv_bytes, struct ipv6_key_t);
+BPF_HASH(ipv6_udp_recv_bytes, struct ipv6_key_t);
 
 int kprobe__udp_sendmsg(struct pt_regs *ctx, struct sock *sk,
     struct msghdr *msg, size_t size)
@@ -124,7 +126,7 @@ int kprobe__udp_sendmsg(struct pt_regs *ctx, struct sock *sk,
         ipv6_key.lport = sk->__sk_common.skc_num;
         dport = sk->__sk_common.skc_dport;
         ipv6_key.dport = ntohs(dport);
-        ipv6_send_bytes.increment(ipv6_key, size);
+        ipv6_tcp_send_bytes.increment(ipv6_key, size);
     }
     // else drop
     return 0;
@@ -155,20 +157,16 @@ int kprobe__tcp_sendmsg(struct pt_regs *ctx, struct sock *sk,
         ipv6_key.lport = sk->__sk_common.skc_num;
         dport = sk->__sk_common.skc_dport;
         ipv6_key.dport = ntohs(dport);
-        ipv6_send_bytes.increment(ipv6_key, size);
+        ipv6_tcp_send_bytes.increment(ipv6_key, size);
     }
     // else drop
     return 0;
 }
 
 /*
- * tcp_recvmsg() would be obvious to trace, but is less suitable because:
- * - we'd need to trace both entry and return, to have both sock and size
- * - misses tcp_read_sock() traffic
- * we'd much prefer tracepoints once they are available.
+ * Tracing sock_recvmsg for UDP recieve monitroing
  */
 
-    // else drop
 int kretprobe__sock_recvmsg(struct pt_regs *ctx, struct socket *skb, struct msghdr *msg, int flags)
 {
     
@@ -205,7 +203,7 @@ int kretprobe__sock_recvmsg(struct pt_regs *ctx, struct socket *skb, struct msgh
         ipv6_key.lport = skb->sk->__sk_common.skc_num;
         dport = skb->sk->__sk_common.skc_dport;
         ipv6_key.dport = ntohs(dport);
-        //# ipv6_recv_bytes.increment(ipv6_key, noblock);
+        ipv6_udp_send_bytes.increment(ipv6_key, copied);
     }
     else
     {
@@ -216,11 +214,6 @@ int kretprobe__sock_recvmsg(struct pt_regs *ctx, struct socket *skb, struct msgh
     return 0;
 }
 
-int kretprobe__udp_rcv(struct pt_regs *ctx, struct sk_buff *skb)
-{
-    int copied = PT_REGS_RC(ctx);//skb->len;
-    bpf_trace_printk("Packet droped, copied:%d...\\n",copied);
-}
 int kprobe__tcp_cleanup_rbuf(struct pt_regs *ctx, struct sock *sk, int copied)
 {
     u32 pid = bpf_get_current_pid_tgid() >> 32;
@@ -249,7 +242,7 @@ int kprobe__tcp_cleanup_rbuf(struct pt_regs *ctx, struct sock *sk, int copied)
         ipv6_key.lport = sk->__sk_common.skc_num;
         dport = sk->__sk_common.skc_dport;
         ipv6_key.dport = ntohs(dport);
-        ipv6_recv_bytes.increment(ipv6_key, copied);
+        ipv6_tcp_recv_bytes.increment(ipv6_key, copied);
     }
     // else drop
 
@@ -298,16 +291,21 @@ b = BPF(text=bpf_text)
 
 # b.trace_print()
 # Shared memory udptop <===> imp_netman_ros
-path = "/tmp"
-key = ipc.ftok(path, 2334)
-shm = ipc.SharedMemory(key, ipc.IPC_CREX, 0)
-shm.attach(0,0)
+# path = "/tmp"
+# key = ipc.ftok(path, 2334)
+# shm = ipc.SharedMemory(key, ipc.IPC_CREX, 0)
+# shm.attach(0,0)
 
 # Lets go...
 ipv4_tcp_send_bytes = b["ipv4_tcp_send_bytes"]
 ipv4_tcp_recv_bytes = b["ipv4_tcp_recv_bytes"]
-ipv6_send_bytes = b["ipv6_send_bytes"]
-ipv6_recv_bytes = b["ipv6_recv_bytes"]
+ipv4_udp_send_bytes = b["ipv4_udp_send_bytes"]
+ipv4_udp_recv_bytes = b["ipv4_udp_recv_bytes"]
+
+ipv6_tcp_send_bytes = b["ipv6_tcp_send_bytes"]
+ipv6_udp_send_bytes = b["ipv6_udp_send_bytes"]
+ipv6_tcp_recv_bytes = b["ipv6_tcp_recv_bytes"]
+ipv6_udp_recv_bytes = b["ipv6_udp_recv_bytes"]
 
 print('Tracing... Output every %s secs. Hit Ctrl-C to end' % args.interval)
 
@@ -331,6 +329,7 @@ while i != args.count and not exiting:
             print("%-8s loadavg: %s" % (strftime("%H:%M:%S"), stats.read()))
 
     # IPv4: build dict of all seen keys
+    # TCP
     ipv4_throughput = defaultdict(lambda: [0, 0])
     for k, v in ipv4_tcp_send_bytes.items():
         key = get_ipv4_session_key(k)
@@ -341,6 +340,15 @@ while i != args.count and not exiting:
         key = get_ipv4_session_key(k)
         ipv4_throughput[key][1] = v.value
     ipv4_tcp_recv_bytes.clear()
+    # UDP
+    # for k, v in ipv4_udp_send_bytes.items():
+    #     key = get_ipv4_session_key(k)
+    #     ipv4_throughput[key][0] = v.value
+    # ipv4_udp_send_bytes.clear()
+    # for k, v in ipv4_udp_recv_bytes.items():
+    #     key = get_ipv4_session_key(k)
+    #     ipv4_throughput[key][1] = v.value
+    # ipv4_udp_recv_bytes.clear()
 
     if ipv4_throughput:
         print("%-6s %-12s %-21s %-21s %6s %6s" % ("PID", "COMM",
@@ -354,30 +362,30 @@ while i != args.count and not exiting:
             pid_to_comm(k.pid),
             k.laddr + ":" + str(k.lport),
             k.daddr + ":" + str(k.dport),
-            int(recv_bytes / 1024), int(send_bytes / 1024))
+            int(recv_bytes / 1024)*8, int(send_bytes / 1024)*8)
         print(prn_buf)
-        ipc_buf = "%d,%s,%d,%d"%(k.pid,
-            pid_to_comm(k.pid),
-            int(recv_bytes / 1024), int(send_bytes / 1024))
-        shm.write(ipc_buf)
+        # ipc_buf = "%d,%s,%d,%d"%(k.pid,
+        #     pid_to_comm(k.pid),
+        #     int(recv_bytes / 1024), int(send_bytes / 1024))
+        # shm.write(ipc_buf)
 
 
     # IPv6: build dict of all seen keys
     ipv6_throughput = defaultdict(lambda: [0, 0])
-    for k, v in ipv6_send_bytes.items():
+    for k, v in ipv6_tcp_send_bytes.items():
         key = get_ipv6_session_key(k)
         ipv6_throughput[key][0] = v.value
-    ipv6_send_bytes.clear()
+    ipv6_tcp_send_bytes.clear()
 
-    for k, v in ipv6_recv_bytes.items():
+    for k, v in ipv6_tcp_recv_bytes.items():
         key = get_ipv6_session_key(k)
         ipv6_throughput[key][1] = v.value
-    ipv6_recv_bytes.clear()
+    ipv6_udp_recv_bytes.clear()
 
     if ipv6_throughput:
         # more than 80 chars, sadly.
         print("\n%-6s %-12s %-32s %-32s %6s %6s" % ("PID", "COMM",
-            "LADDR6", "RADDR6", "RX_KB", "TX_KB"))
+            "LADDR6", "RADDR6", "RX_KiB", "TX_KiB"))
 
     # output
     for k, (send_bytes, recv_bytes) in sorted(ipv6_throughput.items(),
