@@ -11,7 +11,15 @@ Simply run with root right privilege.
 ```bash
 $ sudo ./unitop
 ```
+## Sample output
+```bash
+13:59:59 loadavg: 6.37 4.47 3.36 2/1414 104511
 
+PID    COMM         LADDR                 RADDR                 RX_KiB TX_KiB
+15010  chrome       192.168.1.12:46654    79.127.127.21:443       6840      0
+15010  chrome       192.168.1.12:40338    185.166.104.3:443          0      0
+15010  chrome       192.168.1.12:41590    185.166.104.4:443          0      0
+```
 ## Contributing
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
 

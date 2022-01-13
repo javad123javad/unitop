@@ -9,7 +9,7 @@
 # This uses dynamic tracing of kernel functions, and will need to be updated
 # to match kernel changes.
 #
-# WARNING: This traces all send/receives at the TCP level, and while it
+# WARNING: This traces all send/receives at the TCP/UDP level, and while it
 # summarizes data in-kernel to reduce overhead, there may still be some
 # overhead at high TCP send/receive rates (eg, ~13% of one CPU at 100k TCP
 # events/sec. This is not the same as packet rate: funccount can be used to
@@ -23,6 +23,7 @@
 # Licensed under the Apache License, Version 2.0 (the "License")
 #
 # 02-Sep-2016   Brendan Gregg   Created this.
+# 13-Jan-2022   Javad   Rahimi  Updated this.
 
 from __future__ import print_function
 from bcc import BPF
@@ -352,7 +353,7 @@ while i != args.count and not exiting:
 
     if ipv4_throughput:
         print("%-6s %-12s %-21s %-21s %6s %6s" % ("PID", "COMM",
-            "LADDR", "RADDR", "RX_KB", "TX_KB"))
+            "LADDR", "RADDR", "RX_KiB", "TX_KiB"))
 
     # output
     for k, (send_bytes, recv_bytes) in sorted(ipv4_throughput.items(),
