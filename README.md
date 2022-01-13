@@ -5,13 +5,6 @@ Most available tools use `/proc/net` to gather information. However, these appli
 
 ## Installation
 To use `unitop`, the BCC should be installed in the host. Please follow the installation guide in [BCC](https://github.com/iovisor/bcc/blob/master/INSTALL.md) official page.
-
-Use the package manager [pip](https://pip.pypa.io/en/stable/) to install foobar.
-
-```bash
-pip install foobar
-```
-
 ## Usage
 Simply run with root right privilege. 
 
