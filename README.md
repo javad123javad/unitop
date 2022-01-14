@@ -5,6 +5,10 @@ Most available tools use `/proc/net` to gather information. However, these appli
 
 ## Installation
 To use `unitop`, the BCC should be installed in the host. Please follow the installation guide in [BCC](https://github.com/iovisor/bcc/blob/master/INSTALL.md) official page.
+On systems (As I tested on Nvidia Xavier) the `BCC` collection is not enough. So the `python3-bpfcc` also should be installed via `apt`:
+```bash
+$ sudo apt install python3-bpfcc
+``` 
 ## Usage
 Simply run with root right privilege. 
 
